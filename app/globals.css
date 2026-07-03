@@ -1,0 +1,59 @@
+:root {
+  --paper: #f7f3ec;
+  --paper-line: #e3dccb;
+  --ink: #2b2b2e;
+  --ink-soft: #6b6a66;
+  --moss: #4c6b58;
+  --moss-soft: #dfe8e1;
+  --amber: #c9a227;
+  --amber-soft: #f3ead0;
+  --rose: #c97b84;
+  --rose-soft: #f3e1e2;
+  --radius: 14px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  padding: 0;
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+body {
+  font-family: var(--font-body), -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+.display {
+  font-family: var(--font-display), Georgia, serif;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+button {
+  font-family: inherit;
+}
+
+a {
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--moss);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}

@@ -26,13 +26,27 @@ function startOfToday() {
   return d.toISOString();
 }
 
+function isDoneToday(reminder: Reminder, checkins: Checkin[]): boolean {
+  const mine = checkins.filter((c) => c.reminder_id === reminder.id);
+  if (reminder.type === "simple") {
+    return mine.some((c) => c.completed);
+  }
+  if (reminder.type === "target" && reminder.target_value) {
+    const total = mine.reduce((sum, c) => sum + (c.parsed_value || 0), 0);
+    return total >= reminder.target_value;
+  }
+  return false;
+}
+
 function ReminderCard({
   reminder,
   todaysCheckins,
+  done,
   onLogged
 }: {
   reminder: Reminder;
   todaysCheckins: Checkin[];
+  done: boolean;
   onLogged: () => void;
 }) {
   const [value, setValue] = useState("");
@@ -82,15 +96,20 @@ function ReminderCard({
   return (
     <div
       style={{
-        background: "var(--paper)",
-        border: "1px solid var(--paper-line)",
+        background: done ? "var(--ochre-soft)" : "var(--paper)",
+        border: done ? "1px solid transparent" : "1.5px solid var(--salmon)",
         borderRadius: "var(--radius)",
         padding: "1.1rem 1.2rem",
-        marginBottom: "0.9rem"
+        marginBottom: "0.9rem",
+        opacity: done ? 0.7 : 1,
+        transition: "all 0.3s ease"
       }}
     >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-        <h3 style={{ margin: 0, fontSize: "1.05rem" }}>{reminder.title}</h3>
+        <h3 style={{ margin: 0, fontSize: "1.05rem" }}>
+          {done && "✓ "}
+          {reminder.title}
+        </h3>
         <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
           <span style={{ fontSize: "0.75rem", color: "var(--ink-soft)" }}>
             {cadenceLabel(reminder)}
@@ -276,9 +295,22 @@ export default function Home() {
         </div>
       )}
 
-      {reminders.map((r) => (
-        <ReminderCard key={r.id} reminder={r} todaysCheckins={checkins} onLogged={load} />
-      ))}
+      {[...reminders]
+        .sort((a, b) => {
+          const aDone = isDoneToday(a, checkins);
+          const bDone = isDoneToday(b, checkins);
+          if (aDone === bDone) return 0;
+          return aDone ? 1 : -1;
+        })
+        .map((r) => (
+          <ReminderCard
+            key={r.id}
+            reminder={r}
+            todaysCheckins={checkins}
+            done={isDoneToday(r, checkins)}
+            onLogged={load}
+          />
+        ))}
 
       <Link
         href="/new"

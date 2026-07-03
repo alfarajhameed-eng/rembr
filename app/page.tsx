@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import NotificationSetup from "@/app/components/NotificationSetup";
 import { supabase } from "@/lib/supabaseClient";
 import type { Reminder, Checkin } from "@/lib/types";
 
@@ -275,10 +276,12 @@ export default function Home() {
             fontSize: "0.85rem"
           }}
         >
-          <strong>Turn on notifications:</strong> tap Share in Safari → Add to Home Screen,
-          then open Rembr from your home screen.
+          <strong>One more step:</strong> tap Share in Safari → Add to Home Screen,
+          then open Rembr from your home screen to turn on notifications.
         </div>
       )}
+
+      {(!isIOS || isStandalone) && <NotificationSetup />}
 
       {loading && <p style={{ color: "var(--ink-soft)" }}>Loading…</p>}
 

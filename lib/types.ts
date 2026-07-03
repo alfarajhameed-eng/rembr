@@ -13,6 +13,7 @@ export interface Reminder {
   target_unit: string | null;
   created_at: string;
   active: boolean;
+  last_notified_at: string | null;
 }
 
 export interface Checkin {

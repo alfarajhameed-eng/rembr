@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/send-notifications?secret=221ede97c1251f270b0f9f1e6433a80a59d1b0b6f131f6f5",
+      "schedule": "0 6 * * *"
+    }
+  ]
+}

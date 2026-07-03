@@ -1,10 +1,4 @@
-export type Cadence =
-  | "daily"
-  | "weekly"
-  | "monthly"
-  | "every_monday"
-  | "every_other_day"
-  | "custom";
+export type Cadence = "daily" | "days_of_week" | "interval";
 
 export type ReminderType = "simple" | "target";
 
@@ -12,6 +6,8 @@ export interface Reminder {
   id: string;
   title: string;
   cadence: Cadence;
+  interval_days: number | null; // used when cadence === 'interval'
+  days_of_week: number[] | null; // used when cadence === 'days_of_week', 0=Sun..6=Sat
   type: ReminderType;
   target_value: number | null;
   target_unit: string | null;

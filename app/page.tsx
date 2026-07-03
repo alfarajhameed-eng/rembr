@@ -5,16 +5,19 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import type { Reminder, Checkin } from "@/lib/types";
 
-function cadenceLabel(c: string) {
-  const map: Record<string, string> = {
-    daily: "Every day",
-    weekly: "Every week",
-    monthly: "Every month",
-    every_monday: "Every Monday",
-    every_other_day: "Every other day",
-    custom: "Custom"
-  };
-  return map[c] || c;
+const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function cadenceLabel(reminder: Reminder) {
+  if (reminder.cadence === "daily") return "Every day";
+  if (reminder.cadence === "days_of_week") {
+    const days = reminder.days_of_week || [];
+    if (days.length === 0) return "Specific days";
+    return days.map((d) => DAY_SHORT[d]).join(", ");
+  }
+  if (reminder.cadence === "interval") {
+    return `Every ${reminder.interval_days || "?"} days`;
+  }
+  return reminder.cadence;
 }
 
 function startOfToday() {
@@ -88,9 +91,17 @@ function ReminderCard({
     >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
         <h3 style={{ margin: 0, fontSize: "1.05rem" }}>{reminder.title}</h3>
-        <span style={{ fontSize: "0.75rem", color: "var(--ink-soft)" }}>
-          {cadenceLabel(reminder.cadence)}
-        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+          <span style={{ fontSize: "0.75rem", color: "var(--ink-soft)" }}>
+            {cadenceLabel(reminder)}
+          </span>
+          <Link
+            href={`/edit/${reminder.id}`}
+            style={{ fontSize: "0.75rem", color: "var(--salmon-dark)", textDecoration: "none" }}
+          >
+            Edit
+          </Link>
+        </div>
       </div>
 
       {reminder.type === "simple" && (
@@ -162,8 +173,8 @@ function ReminderCard({
               onClick={logAmount}
               disabled={saving || !value}
               style={{
-                background: "var(--amber)",
-                color: "var(--ink)",
+                background: "var(--salmon)",
+                color: "white",
                 border: "none",
                 borderRadius: "10px",
                 padding: "0.5rem 1rem",

@@ -3,12 +3,23 @@
   --paper-line: #e3dccb;
   --ink: #2b2b2e;
   --ink-soft: #6b6a66;
+
+  /* Primary accent — warm salmon/rose, used for main actions */
+  --salmon: #d98f76;
+  --salmon-dark: #c07458;
+  --salmon-soft: #f5e2d9;
+
+  /* Secondary — progress, completion, "on track" states */
   --moss: #4c6b58;
   --moss-soft: #dfe8e1;
+
+  /* Tertiary — gentle warning / streak attention */
   --amber: #c9a227;
   --amber-soft: #f3ead0;
-  --rose: #c97b84;
-  --rose-soft: #f3e1e2;
+
+  --danger: #b5453f;
+  --danger-soft: #f4dfdd;
+
   --radius: 14px;
 }
 
@@ -47,7 +58,7 @@ a {
 }
 
 :focus-visible {
-  outline: 2px solid var(--moss);
+  outline: 2px solid var(--salmon-dark);
   outline-offset: 2px;
 }
 

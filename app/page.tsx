@@ -107,7 +107,7 @@ function ReminderCard({
       {reminder.type === "simple" && (
         <div style={{ marginTop: "0.7rem" }}>
           {isDoneSimple ? (
-            <span style={{ color: "var(--moss)", fontWeight: 600, fontSize: "0.9rem" }}>
+            <span style={{ color: "var(--ochre)", fontWeight: 600, fontSize: "0.9rem" }}>
               ✓ Done for today
             </span>
           ) : (
@@ -115,7 +115,7 @@ function ReminderCard({
               onClick={markSimpleDone}
               disabled={saving}
               style={{
-                background: "var(--moss)",
+                background: "var(--ochre)",
                 color: "white",
                 border: "none",
                 borderRadius: "999px",
@@ -136,7 +136,7 @@ function ReminderCard({
             style={{
               height: "8px",
               borderRadius: "999px",
-              background: "var(--moss-soft)",
+              background: "var(--ochre-soft)",
               overflow: "hidden",
               marginBottom: "0.5rem"
             }}
@@ -145,7 +145,7 @@ function ReminderCard({
               style={{
                 width: `${progressPct}%`,
                 height: "100%",
-                background: "var(--moss)",
+                background: "var(--ochre)",
                 transition: "width 0.3s ease"
               }}
             />

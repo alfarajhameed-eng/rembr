@@ -1,3 +1,17 @@
+export interface Profile {
+  id: string;
+  full_name: string;
+  household_id: string | null;
+  created_at: string;
+}
+
+export interface Household {
+  id: string;
+  code: string;
+  created_by: string | null;
+  created_at: string;
+}
+
 export type Cadence = "daily" | "days_of_week" | "interval";
 
 export type ReminderType = "simple" | "target";
@@ -14,6 +28,9 @@ export interface Reminder {
   created_at: string;
   active: boolean;
   last_notified_at: string | null;
+  household_id: string | null;
+  owner_id: string | null;
+  assigned_to: string | null;
 }
 
 export interface Checkin {
@@ -23,4 +40,5 @@ export interface Checkin {
   raw_response: string | null;
   parsed_value: number | null;
   completed: boolean;
+  responded_by: string | null;
 }

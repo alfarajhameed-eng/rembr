@@ -4,8 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import NotificationSetup from "@/app/components/NotificationSetup";
 import { supabase } from "@/lib/supabaseClient";
-import { useAuth } from "@/lib/useAuth";
-import type { Reminder, Checkin, Profile } from "@/lib/types";
+import type { Reminder, Checkin } from "@/lib/types";
 
 const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -44,13 +43,11 @@ function ReminderCard({
   reminder,
   todaysCheckins,
   done,
-  assigneeName,
   onLogged
 }: {
   reminder: Reminder;
   todaysCheckins: Checkin[];
   done: boolean;
-  assigneeName: string | null;
   onLogged: () => void;
 }) {
   const [value, setValue] = useState("");
@@ -71,12 +68,10 @@ function ReminderCard({
 
   async function markSimpleDone() {
     setSaving(true);
-    const { data: { user } } = await supabase.auth.getUser();
     await supabase.from("checkins").insert({
       reminder_id: reminder.id,
       raw_response: "done",
-      completed: true,
-      responded_by: user?.id
+      completed: true
     });
     setSaving(false);
     onLogged();
@@ -86,15 +81,13 @@ function ReminderCard({
     const num = parseFloat(value);
     if (isNaN(num)) return;
     setSaving(true);
-    const { data: { user } } = await supabase.auth.getUser();
     const newTotal = totalToday + num;
     const completed = reminder.target_value ? newTotal >= reminder.target_value : false;
     await supabase.from("checkins").insert({
       reminder_id: reminder.id,
       raw_response: value,
       parsed_value: num,
-      completed,
-      responded_by: user?.id
+      completed
     });
     setValue("");
     setSaving(false);
@@ -117,23 +110,18 @@ function ReminderCard({
         <h3 style={{ margin: 0, fontSize: "1.05rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
           {done && "✓ "}
           {reminder.title}
-          {assigneeName && (
+          {reminder.assigned_label && (
             <span
-              title={assigneeName}
               style={{
                 fontSize: "0.65rem",
                 fontWeight: 700,
                 background: "var(--salmon-soft)",
                 color: "var(--salmon-dark)",
                 borderRadius: "999px",
-                width: "20px",
-                height: "20px",
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center"
+                padding: "0.15rem 0.5rem"
               }}
             >
-              {assigneeName[0].toUpperCase()}
+              {reminder.assigned_label}
             </span>
           )}
         </h3>
@@ -238,11 +226,8 @@ function ReminderCard({
 }
 
 export default function Home() {
-  const { profile, loading: authLoading, signOut } = useAuth();
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [checkins, setCheckins] = useState<Checkin[]>([]);
-  const [members, setMembers] = useState<Profile[]>([]);
-  const [householdCode, setHouseholdCode] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [isIOS, setIsIOS] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
@@ -264,24 +249,6 @@ export default function Home() {
     setLoading(false);
   }
 
-  async function loadHousehold() {
-    if (!profile?.household_id) return;
-
-    const { data: memberData } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("household_id", profile.household_id);
-
-    const { data: householdData } = await supabase
-      .from("households")
-      .select("code")
-      .eq("id", profile.household_id)
-      .single();
-
-    setMembers(memberData || []);
-    setHouseholdCode(householdData?.code || "");
-  }
-
   useEffect(() => {
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/sw.js").catch(console.error);
@@ -291,19 +258,9 @@ export default function Home() {
       (window.navigator as any).standalone === true;
     setIsStandalone(standalone);
     setIsIOS(/iphone|ipad|ipod/.test(window.navigator.userAgent.toLowerCase()));
+
+    load();
   }, []);
-
-  useEffect(() => {
-    if (profile) {
-      load();
-      loadHousehold();
-    }
-  }, [profile]);
-
-  function nameFor(userId: string | null): string | null {
-    if (!userId) return null;
-    return members.find((m) => m.id === userId)?.full_name || null;
-  }
 
   const today = new Date().toLocaleDateString("en-GB", {
     weekday: "long",
@@ -311,56 +268,16 @@ export default function Home() {
     month: "long"
   });
 
-  if (authLoading) {
-    return (
-      <main style={{ maxWidth: "480px", margin: "0 auto", padding: "2rem 1.2rem" }}>
-        <p style={{ color: "var(--ink-soft)" }}>Loading…</p>
-      </main>
-    );
-  }
-
   return (
     <main style={{ maxWidth: "480px", margin: "0 auto", padding: "1.5rem 1.2rem 5rem" }}>
-      <header style={{ marginBottom: "1.5rem", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <div>
-          <h1 className="display" style={{ fontSize: "1.8rem", margin: 0 }}>
-            Rembr
-          </h1>
-          <p style={{ margin: "0.2rem 0 0", color: "var(--ink-soft)", fontSize: "0.9rem" }}>
-            {today}
-          </p>
-        </div>
-        <div style={{ textAlign: "right" }}>
-          <p style={{ margin: 0, fontSize: "0.85rem", fontWeight: 600 }}>{profile?.full_name}</p>
-          <button
-            onClick={signOut}
-            style={{
-              background: "none",
-              border: "none",
-              color: "var(--ink-soft)",
-              fontSize: "0.75rem",
-              cursor: "pointer",
-              padding: 0,
-              textDecoration: "underline"
-            }}
-          >
-            Sign out
-          </button>
-        </div>
+      <header style={{ marginBottom: "1.5rem" }}>
+        <h1 className="display" style={{ fontSize: "1.8rem", margin: 0 }}>
+          Rembr
+        </h1>
+        <p style={{ margin: "0.2rem 0 0", color: "var(--ink-soft)", fontSize: "0.9rem" }}>
+          {today}
+        </p>
       </header>
-
-      {members.length > 1 && (
-        <p style={{ fontSize: "0.75rem", color: "var(--ink-soft)", marginTop: "-1rem", marginBottom: "1rem" }}>
-          Shared with {members.filter((m) => m.id !== profile?.id).map((m) => m.full_name).join(", ")}
-          {" · code "}
-          <strong>{householdCode}</strong>
-        </p>
-      )}
-      {members.length === 1 && householdCode && (
-        <p style={{ fontSize: "0.75rem", color: "var(--ink-soft)", marginTop: "-1rem", marginBottom: "1rem" }}>
-          Your space · invite code <strong>{householdCode}</strong>
-        </p>
-      )}
 
       {isIOS && !isStandalone && (
         <div
@@ -408,7 +325,6 @@ export default function Home() {
             reminder={r}
             todaysCheckins={checkins}
             done={isDoneToday(r, checkins)}
-            assigneeName={members.length > 1 ? nameFor(r.assigned_to) : null}
             onLogged={load}
           />
         ))}

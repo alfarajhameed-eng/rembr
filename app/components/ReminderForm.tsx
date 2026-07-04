@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import type { Cadence, Profile, Reminder, ReminderType } from "@/lib/types";
+import type { Cadence, Reminder, ReminderType } from "@/lib/types";
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -22,37 +22,8 @@ export default function ReminderForm({ existing }: { existing?: Reminder }) {
     existing?.target_value ? String(existing.target_value) : ""
   );
   const [targetUnit, setTargetUnit] = useState(existing?.target_unit || "");
+  const [assignedLabel, setAssignedLabel] = useState(existing?.assigned_label || "");
   const [saving, setSaving] = useState(false);
-  const [members, setMembers] = useState<Profile[]>([]);
-  const [assignedTo, setAssignedTo] = useState<string>(existing?.assigned_to || "");
-  const [currentUserId, setCurrentUserId] = useState<string>("");
-
-  useEffect(() => {
-    async function loadMembers() {
-      const {
-        data: { user }
-      } = await supabase.auth.getUser();
-      if (!user) return;
-      setCurrentUserId(user.id);
-
-      const { data: myProfile } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", user.id)
-        .single();
-
-      if (!myProfile?.household_id) return;
-
-      const { data: householdMembers } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("household_id", myProfile.household_id);
-
-      setMembers(householdMembers || []);
-      if (!existing) setAssignedTo(user.id);
-    }
-    loadMembers();
-  }, [existing]);
 
   function toggleDay(day: number) {
     setDaysOfWeek((prev) =>
@@ -64,16 +35,6 @@ export default function ReminderForm({ existing }: { existing?: Reminder }) {
     if (!title.trim()) return;
     setSaving(true);
 
-    const {
-      data: { user }
-    } = await supabase.auth.getUser();
-
-    const { data: myProfile } = await supabase
-      .from("profiles")
-      .select("household_id")
-      .eq("id", user!.id)
-      .single();
-
     const payload = {
       title: title.trim(),
       cadence,
@@ -82,17 +43,13 @@ export default function ReminderForm({ existing }: { existing?: Reminder }) {
       type,
       target_value: type === "target" ? parseFloat(targetValue) || null : null,
       target_unit: type === "target" ? targetUnit.trim() || null : null,
-      assigned_to: assignedTo || user!.id
+      assigned_label: assignedLabel.trim() || null
     };
 
     if (isEditing) {
       await supabase.from("reminders").update(payload).eq("id", existing!.id);
     } else {
-      await supabase.from("reminders").insert({
-        ...payload,
-        owner_id: user!.id,
-        household_id: myProfile?.household_id
-      });
+      await supabase.from("reminders").insert(payload);
     }
 
     setSaving(false);
@@ -155,6 +112,16 @@ export default function ReminderForm({ existing }: { existing?: Reminder }) {
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="e.g. Drink water, Laundry, Football, Call mom"
+        />
+      </label>
+
+      <label style={labelStyle}>
+        Label (optional — whose is this?)
+        <input
+          style={inputStyle}
+          value={assignedLabel}
+          onChange={(e) => setAssignedLabel(e.target.value)}
+          placeholder="e.g. Hameed, Wejdan, Family"
         />
       </label>
 
@@ -239,23 +206,6 @@ export default function ReminderForm({ existing }: { existing?: Reminder }) {
             />
           </label>
         </div>
-      )}
-
-      {members.length > 1 && (
-        <label style={labelStyle}>
-          Who's this for?
-          <select
-            style={inputStyle}
-            value={assignedTo}
-            onChange={(e) => setAssignedTo(e.target.value)}
-          >
-            {members.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.id === currentUserId ? `${m.full_name} (you)` : m.full_name}
-              </option>
-            ))}
-          </select>
-        </label>
       )}
 
       <button

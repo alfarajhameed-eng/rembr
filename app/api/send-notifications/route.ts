@@ -22,7 +22,7 @@ function startOfToday() {
 
 function isDueToday(reminder: Reminder): boolean {
   const today = startOfToday();
-  const todayDay = today.getDay(); // 0=Sun..6=Sat
+  const todayDay = today.getDay();
 
   if (reminder.cadence === "daily") return true;
 
@@ -58,7 +58,6 @@ function isDoneToday(reminder: Reminder, checkins: Checkin[]): boolean {
 }
 
 export async function GET(req: NextRequest) {
-  // Simple shared-secret check so randoms can't trigger this endpoint
   const secret = req.nextUrl.searchParams.get("secret");
   if (secret !== process.env.CRON_SECRET) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });

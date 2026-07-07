@@ -7,29 +7,51 @@ import type { Cadence, Reminder, ReminderType, Subtask } from "@/lib/types";
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-export default function ReminderForm({ existing }: { existing?: Reminder }) {
+interface PrefillData {
+  title?: string;
+  cadence?: Cadence;
+  days_of_week?: number[] | null;
+  interval_days?: number | null;
+  due_at?: string | null;
+  type?: ReminderType;
+  target_value?: number | null;
+  target_unit?: string | null;
+  assigned_label?: string | null;
+  subtasks?: string[] | null;
+}
+
+export default function ReminderForm({
+  existing,
+  prefill
+}: {
+  existing?: Reminder;
+  prefill?: PrefillData;
+}) {
   const router = useRouter();
   const isEditing = !!existing;
+  const seed = existing || prefill;
 
-  const [title, setTitle] = useState(existing?.title || "");
-  const [cadence, setCadence] = useState<Cadence>(existing?.cadence || "daily");
-  const [daysOfWeek, setDaysOfWeek] = useState<number[]>(existing?.days_of_week || []);
+  const [title, setTitle] = useState(seed?.title || "");
+  const [cadence, setCadence] = useState<Cadence>(seed?.cadence || "daily");
+  const [daysOfWeek, setDaysOfWeek] = useState<number[]>(seed?.days_of_week || []);
   const [intervalDays, setIntervalDays] = useState(
-    existing?.interval_days ? String(existing.interval_days) : "3"
+    seed?.interval_days ? String(seed.interval_days) : "3"
   );
   const [dueDate, setDueDate] = useState(
-    existing?.due_at ? existing.due_at.slice(0, 10) : ""
+    seed?.due_at ? seed.due_at.slice(0, 10) : ""
   );
   const [dueTime, setDueTime] = useState(
-    existing?.due_at ? existing.due_at.slice(11, 16) : "09:00"
+    seed?.due_at ? seed.due_at.slice(11, 16) : "09:00"
   );
-  const [type, setType] = useState<ReminderType>(existing?.type || "simple");
+  const [type, setType] = useState<ReminderType>(seed?.type || "simple");
   const [targetValue, setTargetValue] = useState(
-    existing?.target_value ? String(existing.target_value) : ""
+    seed?.target_value ? String(seed.target_value) : ""
   );
-  const [targetUnit, setTargetUnit] = useState(existing?.target_unit || "");
-  const [assignedLabel, setAssignedLabel] = useState(existing?.assigned_label || "");
-  const [subtaskTitles, setSubtaskTitles] = useState<string[]>([""]);
+  const [targetUnit, setTargetUnit] = useState(seed?.target_unit || "");
+  const [assignedLabel, setAssignedLabel] = useState(seed?.assigned_label || "");
+  const [subtaskTitles, setSubtaskTitles] = useState<string[]>(
+    prefill?.subtasks && prefill.subtasks.length > 0 ? prefill.subtasks : [""]
+  );
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {

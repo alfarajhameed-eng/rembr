@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import type { Cadence, Reminder, ReminderType } from "@/lib/types";
+import type { Cadence, Reminder, ReminderType, Subtask } from "@/lib/types";
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -17,13 +17,36 @@ export default function ReminderForm({ existing }: { existing?: Reminder }) {
   const [intervalDays, setIntervalDays] = useState(
     existing?.interval_days ? String(existing.interval_days) : "3"
   );
+  const [dueDate, setDueDate] = useState(
+    existing?.due_at ? existing.due_at.slice(0, 10) : ""
+  );
+  const [dueTime, setDueTime] = useState(
+    existing?.due_at ? existing.due_at.slice(11, 16) : "09:00"
+  );
   const [type, setType] = useState<ReminderType>(existing?.type || "simple");
   const [targetValue, setTargetValue] = useState(
     existing?.target_value ? String(existing.target_value) : ""
   );
   const [targetUnit, setTargetUnit] = useState(existing?.target_unit || "");
   const [assignedLabel, setAssignedLabel] = useState(existing?.assigned_label || "");
+  const [subtaskTitles, setSubtaskTitles] = useState<string[]>([""]);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!existing) return;
+    async function loadSubtasks() {
+      const { data } = await supabase
+        .from("subtasks")
+        .select("*")
+        .eq("reminder_id", existing!.id)
+        .eq("active", true)
+        .order("sort_order", { ascending: true });
+      if (data && data.length > 0) {
+        setSubtaskTitles((data as Subtask[]).map((s) => s.title));
+      }
+    }
+    loadSubtasks();
+  }, [existing]);
 
   function toggleDay(day: number) {
     setDaysOfWeek((prev) =>
@@ -31,25 +54,59 @@ export default function ReminderForm({ existing }: { existing?: Reminder }) {
     );
   }
 
+  function updateSubtask(index: number, value: string) {
+    setSubtaskTitles((prev) => prev.map((t, i) => (i === index ? value : t)));
+  }
+
+  function addSubtaskField() {
+    setSubtaskTitles((prev) => [...prev, ""]);
+  }
+
+  function removeSubtaskField(index: number) {
+    setSubtaskTitles((prev) => prev.filter((_, i) => i !== index));
+  }
+
   async function save() {
     if (!title.trim()) return;
+    if (cadence === "once" && !dueDate) return;
     setSaving(true);
+
+    const due_at =
+      cadence === "once" && dueDate ? new Date(`${dueDate}T${dueTime}`).toISOString() : null;
 
     const payload = {
       title: title.trim(),
       cadence,
       days_of_week: cadence === "days_of_week" ? daysOfWeek : null,
       interval_days: cadence === "interval" ? parseInt(intervalDays) || null : null,
+      due_at,
       type,
       target_value: type === "target" ? parseFloat(targetValue) || null : null,
       target_unit: type === "target" ? targetUnit.trim() || null : null,
       assigned_label: assignedLabel.trim() || null
     };
 
+    let reminderId = existing?.id;
+
     if (isEditing) {
       await supabase.from("reminders").update(payload).eq("id", existing!.id);
     } else {
-      await supabase.from("reminders").insert(payload);
+      const { data } = await supabase.from("reminders").insert(payload).select().single();
+      reminderId = data?.id;
+    }
+
+    if (type === "checklist" && reminderId) {
+      await supabase.from("subtasks").delete().eq("reminder_id", reminderId);
+      const cleanTitles = subtaskTitles.map((t) => t.trim()).filter(Boolean);
+      if (cleanTitles.length > 0) {
+        await supabase.from("subtasks").insert(
+          cleanTitles.map((t, i) => ({
+            reminder_id: reminderId,
+            title: t,
+            sort_order: i
+          }))
+        );
+      }
     }
 
     setSaving(false);
@@ -126,19 +183,20 @@ export default function ReminderForm({ existing }: { existing?: Reminder }) {
       </label>
 
       <label style={labelStyle}>How often?</label>
-      <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.4rem" }}>
+      <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.4rem", flexWrap: "wrap" }}>
         {(
           [
             { key: "daily", label: "Every day" },
             { key: "days_of_week", label: "Specific days" },
-            { key: "interval", label: "Every X days" }
+            { key: "interval", label: "Every X days" },
+            { key: "once", label: "One time" }
           ] as { key: Cadence; label: string }[]
         ).map((opt) => (
           <button
             key={opt.key}
             onClick={() => setCadence(opt.key)}
             style={{
-              flex: 1,
+              flex: "1 1 45%",
               padding: "0.5rem 0.4rem",
               borderRadius: "10px",
               border: cadence === opt.key ? "none" : "1px solid var(--paper-line)",
@@ -176,11 +234,35 @@ export default function ReminderForm({ existing }: { existing?: Reminder }) {
         </div>
       )}
 
+      {cadence === "once" && (
+        <div style={{ display: "flex", gap: "0.7rem" }}>
+          <label style={{ ...labelStyle, flex: 1 }}>
+            Date
+            <input
+              type="date"
+              style={inputStyle}
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
+            />
+          </label>
+          <label style={{ ...labelStyle, flex: 1 }}>
+            Time
+            <input
+              type="time"
+              style={inputStyle}
+              value={dueTime}
+              onChange={(e) => setDueTime(e.target.value)}
+            />
+          </label>
+        </div>
+      )}
+
       <label style={labelStyle}>
         What kind of reminder is this?
         <select style={inputStyle} value={type} onChange={(e) => setType(e.target.value as ReminderType)}>
           <option value="simple">A simple nudge (e.g. do laundry, call mom)</option>
           <option value="target">Track toward an amount (e.g. water, pages read, pushups)</option>
+          <option value="checklist">A checklist (e.g. Laundry: whites, mix, baby clothes)</option>
         </select>
       </label>
 
@@ -205,6 +287,52 @@ export default function ReminderForm({ existing }: { existing?: Reminder }) {
               placeholder="ml, pages, reps…"
             />
           </label>
+        </div>
+      )}
+
+      {type === "checklist" && (
+        <div>
+          <label style={labelStyle}>Items that must all be done</label>
+          {subtaskTitles.map((t, i) => (
+            <div key={i} style={{ display: "flex", gap: "0.4rem", marginTop: "0.4rem" }}>
+              <input
+                style={{ ...inputStyle, marginTop: 0 }}
+                value={t}
+                onChange={(e) => updateSubtask(i, e.target.value)}
+                placeholder={`Item ${i + 1}, e.g. Whites`}
+              />
+              {subtaskTitles.length > 1 && (
+                <button
+                  onClick={() => removeSubtaskField(i)}
+                  style={{
+                    border: "none",
+                    background: "var(--danger-soft)",
+                    color: "var(--danger)",
+                    borderRadius: "10px",
+                    padding: "0 0.8rem",
+                    cursor: "pointer"
+                  }}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          ))}
+          <button
+            onClick={addSubtaskField}
+            style={{
+              marginTop: "0.6rem",
+              border: "1px dashed var(--paper-line)",
+              background: "none",
+              color: "var(--ink-soft)",
+              borderRadius: "10px",
+              padding: "0.4rem 0.8rem",
+              fontSize: "0.85rem",
+              cursor: "pointer"
+            }}
+          >
+            + Add item
+          </button>
         </div>
       )}
 

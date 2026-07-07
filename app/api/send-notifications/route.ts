@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import webpush from "web-push";
-import type { Reminder, Checkin } from "@/lib/types";
+import type { Reminder, Checkin, Subtask, SubtaskCheckin } from "@/lib/types";
+import { isDueToday, isDoneToday, daysOverdue, startOfToday } from "@/lib/reminderLogic";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -14,47 +15,9 @@ webpush.setVapidDetails(
   process.env.VAPID_PRIVATE_KEY!
 );
 
-function startOfToday() {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
-function isDueToday(reminder: Reminder): boolean {
-  const today = startOfToday();
-  const todayDay = today.getDay();
-
-  if (reminder.cadence === "daily") return true;
-
-  if (reminder.cadence === "days_of_week") {
-    return (reminder.days_of_week || []).includes(todayDay);
-  }
-
-  if (reminder.cadence === "interval") {
-    if (!reminder.last_notified_at) return true;
-    const last = new Date(reminder.last_notified_at);
-    const daysSince = Math.floor((today.getTime() - last.getTime()) / 86400000);
-    return daysSince >= (reminder.interval_days || 1);
-  }
-
-  return false;
-}
-
 function alreadyNotifiedToday(reminder: Reminder): boolean {
   if (!reminder.last_notified_at) return false;
-  const last = new Date(reminder.last_notified_at);
-  const today = startOfToday();
-  return last >= today;
-}
-
-function isDoneToday(reminder: Reminder, checkins: Checkin[]): boolean {
-  const mine = checkins.filter((c) => c.reminder_id === reminder.id);
-  if (reminder.type === "simple") return mine.some((c) => c.completed);
-  if (reminder.type === "target" && reminder.target_value) {
-    const total = mine.reduce((sum, c) => sum + (c.parsed_value || 0), 0);
-    return total >= reminder.target_value;
-  }
-  return false;
+  return new Date(reminder.last_notified_at) >= startOfToday();
 }
 
 export async function GET(req: NextRequest) {
@@ -63,16 +26,16 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const { data: reminders } = await supabase
-    .from("reminders")
-    .select("*")
-    .eq("active", true);
-
+  const { data: reminders } = await supabase.from("reminders").select("*").eq("active", true);
   const { data: checkins } = await supabase
     .from("checkins")
     .select("*")
     .gte("responded_at", startOfToday().toISOString());
-
+  const { data: subtasks } = await supabase.from("subtasks").select("*").eq("active", true);
+  const { data: subtaskCheckins } = await supabase
+    .from("subtask_checkins")
+    .select("*")
+    .gte("responded_at", startOfToday().toISOString());
   const { data: subscriptions } = await supabase.from("push_subscriptions").select("*");
 
   if (!reminders || !subscriptions || subscriptions.length === 0) {
@@ -82,23 +45,36 @@ export async function GET(req: NextRequest) {
   let sent = 0;
 
   for (const reminder of reminders as Reminder[]) {
-    if (!isDueToday(reminder)) continue;
     if (alreadyNotifiedToday(reminder)) continue;
-    if (isDoneToday(reminder, (checkins as Checkin[]) || [])) continue;
 
-    const payload = JSON.stringify({
-      title: "Rembr",
-      body: reminder.title,
-      url: "/"
-    });
+    const overdue = daysOverdue(
+      reminder,
+      (checkins as Checkin[]) || [],
+      (subtasks as Subtask[]) || [],
+      (subtaskCheckins as SubtaskCheckin[]) || []
+    );
+    const dueNow = isDueToday(reminder);
+    const done = isDoneToday(
+      reminder,
+      (checkins as Checkin[]) || [],
+      (subtasks as Subtask[]) || [],
+      (subtaskCheckins as SubtaskCheckin[]) || []
+    );
+
+    if (done) continue;
+    if (!dueNow && overdue === 0) continue;
+
+    const body =
+      overdue > 0
+        ? `${reminder.title} — ${overdue} ${overdue === 1 ? "day" : "days"} overdue`
+        : reminder.title;
+
+    const payload = JSON.stringify({ title: "Rembr", body, url: "/" });
 
     for (const sub of subscriptions) {
       try {
         await webpush.sendNotification(
-          {
-            endpoint: sub.endpoint,
-            keys: { p256dh: sub.p256dh, auth: sub.auth }
-          },
+          { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
           payload
         );
         sent++;

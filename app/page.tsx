@@ -4,11 +4,18 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import NotificationSetup from "@/app/components/NotificationSetup";
 import { supabase } from "@/lib/supabaseClient";
-import type { Reminder, Checkin } from "@/lib/types";
+import type { Reminder, Checkin, Subtask, SubtaskCheckin } from "@/lib/types";
+import { isDoneToday, isDueToday, daysOverdue, startOfToday } from "@/lib/reminderLogic";
 
 const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 function cadenceLabel(reminder: Reminder) {
+  if (reminder.cadence === "once" && reminder.due_at) {
+    const d = new Date(reminder.due_at);
+    return d.toLocaleDateString("en-GB", { day: "numeric", month: "short" }) +
+      " · " +
+      d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  }
   if (reminder.cadence === "daily") return "Every day";
   if (reminder.cadence === "days_of_week") {
     const days = reminder.days_of_week || [];
@@ -21,33 +28,21 @@ function cadenceLabel(reminder: Reminder) {
   return reminder.cadence;
 }
 
-function startOfToday() {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d.toISOString();
-}
-
-function isDoneToday(reminder: Reminder, checkins: Checkin[]): boolean {
-  const mine = checkins.filter((c) => c.reminder_id === reminder.id);
-  if (reminder.type === "simple") {
-    return mine.some((c) => c.completed);
-  }
-  if (reminder.type === "target" && reminder.target_value) {
-    const total = mine.reduce((sum, c) => sum + (c.parsed_value || 0), 0);
-    return total >= reminder.target_value;
-  }
-  return false;
-}
-
 function ReminderCard({
   reminder,
   todaysCheckins,
+  subtasks,
+  subtaskCheckins,
   done,
+  overdueDays,
   onLogged
 }: {
   reminder: Reminder;
   todaysCheckins: Checkin[];
+  subtasks: Subtask[];
+  subtaskCheckins: SubtaskCheckin[];
   done: boolean;
+  overdueDays: number;
   onLogged: () => void;
 }) {
   const [value, setValue] = useState("");
@@ -66,6 +61,17 @@ function ReminderCard({
       ? Math.min(100, Math.round((totalToday / reminder.target_value) * 100))
       : 0;
 
+  const mySubtasks = subtasks
+    .filter((s) => s.reminder_id === reminder.id && s.active)
+    .sort((a, b) => a.sort_order - b.sort_order);
+
+  async function markCompletedNow() {
+    await supabase
+      .from("reminders")
+      .update({ last_completed_at: new Date().toISOString() })
+      .eq("id", reminder.id);
+  }
+
   async function markSimpleDone() {
     setSaving(true);
     await supabase.from("checkins").insert({
@@ -73,6 +79,7 @@ function ReminderCard({
       raw_response: "done",
       completed: true
     });
+    await markCompletedNow();
     setSaving(false);
     onLogged();
   }
@@ -89,7 +96,34 @@ function ReminderCard({
       parsed_value: num,
       completed
     });
+    if (completed) await markCompletedNow();
     setValue("");
+    setSaving(false);
+    onLogged();
+  }
+
+  async function toggleSubtask(subtaskId: string, currentlyDone: boolean) {
+    setSaving(true);
+    if (currentlyDone) {
+      const today = startOfToday();
+      await supabase
+        .from("subtask_checkins")
+        .delete()
+        .eq("subtask_id", subtaskId)
+        .gte("responded_at", today.toISOString());
+    } else {
+      await supabase.from("subtask_checkins").insert({ subtask_id: subtaskId });
+    }
+
+    const allDone = mySubtasks.every((s) => {
+      if (s.id === subtaskId) return !currentlyDone;
+      const today = startOfToday();
+      return subtaskCheckins.some(
+        (c) => c.subtask_id === s.id && new Date(c.responded_at) >= today
+      );
+    });
+    if (allDone) await markCompletedNow();
+
     setSaving(false);
     onLogged();
   }
@@ -97,8 +131,12 @@ function ReminderCard({
   return (
     <div
       style={{
-        background: done ? "var(--ochre-soft)" : "var(--paper)",
-        border: done ? "1px solid transparent" : "1.5px solid var(--salmon)",
+        background: done ? "var(--ochre-soft)" : overdueDays > 0 ? "var(--danger-soft)" : "var(--paper)",
+        border: done
+          ? "1px solid transparent"
+          : overdueDays > 0
+          ? "1.5px solid var(--danger)"
+          : "1.5px solid var(--salmon)",
         borderRadius: "var(--radius)",
         padding: "1.1rem 1.2rem",
         marginBottom: "0.9rem",
@@ -107,7 +145,7 @@ function ReminderCard({
       }}
     >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-        <h3 style={{ margin: 0, fontSize: "1.05rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+        <h3 style={{ margin: 0, fontSize: "1.05rem", display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
           {done && "✓ "}
           {reminder.title}
           {reminder.assigned_label && (
@@ -124,6 +162,20 @@ function ReminderCard({
               {reminder.assigned_label}
             </span>
           )}
+          {overdueDays > 0 && (
+            <span
+              style={{
+                fontSize: "0.65rem",
+                fontWeight: 700,
+                background: "var(--danger)",
+                color: "white",
+                borderRadius: "999px",
+                padding: "0.15rem 0.5rem"
+              }}
+            >
+              {overdueDays} {overdueDays === 1 ? "day" : "days"} overdue
+            </span>
+          )}
         </h3>
         <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
           <span style={{ fontSize: "0.75rem", color: "var(--ink-soft)" }}>
@@ -138,11 +190,24 @@ function ReminderCard({
         </div>
       </div>
 
+      {reminder.ai_message && (
+        <p
+          style={{
+            fontSize: "0.82rem",
+            fontStyle: "italic",
+            color: "var(--ink-soft)",
+            margin: "0.5rem 0 0"
+          }}
+        >
+          {reminder.ai_message}
+        </p>
+      )}
+
       {reminder.type === "simple" && (
         <div style={{ marginTop: "0.7rem" }}>
           {isDoneSimple ? (
             <span style={{ color: "var(--ochre)", fontWeight: 600, fontSize: "0.9rem" }}>
-              ✓ Done for today
+              ✓ Done
             </span>
           ) : (
             <button
@@ -221,6 +286,43 @@ function ReminderCard({
           </div>
         </div>
       )}
+
+      {reminder.type === "checklist" && (
+        <div style={{ marginTop: "0.7rem" }}>
+          {mySubtasks.length === 0 && (
+            <p style={{ fontSize: "0.8rem", color: "var(--ink-soft)" }}>No items yet — edit to add some.</p>
+          )}
+          {mySubtasks.map((s) => {
+            const today = startOfToday();
+            const subDone = subtaskCheckins.some(
+              (c) => c.subtask_id === s.id && new Date(c.responded_at) >= today
+            );
+            return (
+              <label
+                key={s.id}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.5rem",
+                  fontSize: "0.9rem",
+                  marginBottom: "0.4rem",
+                  cursor: "pointer",
+                  textDecoration: subDone ? "line-through" : "none",
+                  color: subDone ? "var(--ink-soft)" : "var(--ink)"
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={subDone}
+                  onChange={() => toggleSubtask(s.id, subDone)}
+                  disabled={saving}
+                />
+                {s.title}
+              </label>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -228,6 +330,8 @@ function ReminderCard({
 export default function Home() {
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [checkins, setCheckins] = useState<Checkin[]>([]);
+  const [subtasks, setSubtasks] = useState<Subtask[]>([]);
+  const [subtaskCheckins, setSubtaskCheckins] = useState<SubtaskCheckin[]>([]);
   const [loading, setLoading] = useState(true);
   const [isIOS, setIsIOS] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
@@ -242,11 +346,48 @@ export default function Home() {
     const { data: checkinData } = await supabase
       .from("checkins")
       .select("*")
-      .gte("responded_at", startOfToday());
+      .gte("responded_at", startOfToday().toISOString());
+
+    const { data: subtaskData } = await supabase.from("subtasks").select("*").eq("active", true);
+
+    const { data: subtaskCheckinData } = await supabase
+      .from("subtask_checkins")
+      .select("*")
+      .gte("responded_at", startOfToday().toISOString());
 
     setReminders(reminderData || []);
     setCheckins(checkinData || []);
+    setSubtasks(subtaskData || []);
+    setSubtaskCheckins(subtaskCheckinData || []);
     setLoading(false);
+
+    // Generate a fresh AI nudge for pending reminders that don't have one from today yet.
+    const today = startOfToday();
+    const staleReminders = (reminderData || []).filter((r: Reminder) => {
+      return !r.ai_message_at || new Date(r.ai_message_at) < today;
+    });
+
+    if (staleReminders.length > 0) {
+      Promise.all(
+        staleReminders.map((r: Reminder) =>
+          fetch("/api/nudge", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ reminder_id: r.id })
+          }).catch(() => {})
+        )
+      ).then(() => {
+        // Quietly refresh reminder data so new nudge messages show up
+        supabase
+          .from("reminders")
+          .select("*")
+          .eq("active", true)
+          .order("created_at", { ascending: true })
+          .then(({ data }) => {
+            if (data) setReminders(data);
+          });
+      });
+    }
   }
 
   useEffect(() => {
@@ -267,6 +408,8 @@ export default function Home() {
     day: "numeric",
     month: "long"
   });
+
+  const visibleReminders = reminders.filter((r) => isDueToday(r) || daysOverdue(r, checkins, subtasks, subtaskCheckins) > 0 || isDoneToday(r, checkins, subtasks, subtaskCheckins));
 
   return (
     <main style={{ maxWidth: "480px", margin: "0 auto", padding: "1.5rem 1.2rem 5rem" }}>
@@ -312,19 +455,25 @@ export default function Home() {
         </div>
       )}
 
-      {[...reminders]
+      {[...visibleReminders]
         .sort((a, b) => {
-          const aDone = isDoneToday(a, checkins);
-          const bDone = isDoneToday(b, checkins);
-          if (aDone === bDone) return 0;
-          return aDone ? 1 : -1;
+          const aOverdue = daysOverdue(a, checkins, subtasks, subtaskCheckins);
+          const bOverdue = daysOverdue(b, checkins, subtasks, subtaskCheckins);
+          const aDone = isDoneToday(a, checkins, subtasks, subtaskCheckins);
+          const bDone = isDoneToday(b, checkins, subtasks, subtaskCheckins);
+          if (aDone !== bDone) return aDone ? 1 : -1;
+          if (aOverdue !== bOverdue) return bOverdue - aOverdue;
+          return 0;
         })
         .map((r) => (
           <ReminderCard
             key={r.id}
             reminder={r}
             todaysCheckins={checkins}
-            done={isDoneToday(r, checkins)}
+            subtasks={subtasks}
+            subtaskCheckins={subtaskCheckins}
+            done={isDoneToday(r, checkins, subtasks, subtaskCheckins)}
+            overdueDays={daysOverdue(r, checkins, subtasks, subtaskCheckins)}
             onLogged={load}
           />
         ))}
